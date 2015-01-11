@@ -138,41 +138,38 @@ void gaussian_blur(const unsigned char* const inputChannel,
 	{
 		return;
 	}
-	//For every pixel in the image
-	for (int y = 0; y < (int)numRows; ++y) {
-		for (int x = 0; x < (int)numCols; ++x) {
-			float result = 0.f;
-			//For every value in the filter around the pixel (c, r)
-			for (int filter_y = -filterWidth/2; filter_y <= filterWidth/2; ++filter_y) {
-				for (int filter_x = -filterWidth/2; filter_x <= filterWidth/2; ++filter_x) {
-					//Find the global image position for this filter position
-					//clamp to boundary of the image
-					int image_y = y + filter_y;
-					if(image_y< 0){
-						image_y = 0;
-					}else if(image_y > numRows - 1){
-						filter_y = numRows - 1;
-					}
 
-					int image_x = x + filter_x;
-					if(image_x< 0){
-						image_x = 0;
-					}else if(image_x > numCols - 1){
-						image_x = numCols - 1;
-					}
-					//int image_y = std::min(std::max(y + filter_y, 0), static_cast<int>(numRows - 1));
-					//int image_x = std::min(std::max(x + filter_x, 0), static_cast<int>(numCols - 1));
-
-					float image_value = static_cast<float>(inputChannel[image_y * numCols + image_x]);
-					float filter_value = filter[(filter_y + filterWidth/2) * filterWidth + filter_x + filterWidth/2];
-
-					result += image_value * filter_value;
-				}
+	float result = 0.f;
+	//For every value in the filter around the pixel (c, r)
+	for (int filter_y = -filterWidth/2; filter_y <= filterWidth/2; ++filter_y) {
+		for (int filter_x = -filterWidth/2; filter_x <= filterWidth/2; ++filter_x) {
+			//Find the global image position for this filter position
+			//clamp to boundary of the image
+			int image_y = y + filter_y;
+			if(image_y< 0){
+				image_y = 0;
+			}else if(image_y > numRows - 1){
+				image_y = numRows - 1;
 			}
 
-			outputChannel[index] = result;
+			int image_x = x + filter_x;
+			if(image_x< 0){
+				image_x = 0;
+			}else if(image_x > numCols - 1){
+				image_x = numCols - 1;
+			}
+			//int image_y = std::min(std::max(y + filter_y, 0), static_cast<int>(numRows - 1));
+			//int image_x = std::min(std::max(x + filter_x, 0), static_cast<int>(numCols - 1));
+
+			float image_value = static_cast<float>(inputChannel[image_y * numCols + image_x]);
+			float filter_value = filter[(filter_y + filterWidth/2) * filterWidth + filter_x + filterWidth/2];
+
+			result += image_value * filter_value;
 		}
 	}
+
+	outputChannel[index] = result;
+
 }
 
 //This kernel takes in an image represented as a uchar4 and splits
@@ -203,6 +200,7 @@ void separateChannels(const uchar4* const inputImageRGBA,
 	if ( x >= numCols ||
 			y >= numRows )
 	{
+		//printf("out of boundary: x=%d,y=%d\n", x,y);
 		return;
 	}
 
@@ -282,7 +280,7 @@ void allocateMemoryAndCopyToGPU(const size_t numRowsImage, const size_t numColsI
 	//Remember to use checkCudaErrors!
 
 	checkCudaErrors(cudaMemcpy(d_filter, h_filter, sizeof(float) * filterWidth * filterWidth, cudaMemcpyHostToDevice));
-	printArray(h_filter, filterWidth, filterWidth);
+	//printArray(h_filter, filterWidth, filterWidth);
 	// printArray(h_filter, filterWidth, filterWidth);
 
 }
@@ -300,8 +298,9 @@ void your_gaussian_blur(const uchar4 * const h_inputImageRGBA, uchar4 * const d_
 	//TODO:
 	//Compute correct grid size (i.e., number of blocks per kernel launch)
 	//from the image size and and block size.
-	const dim3 gridSize(numCols%filterWidth + 1,numRows%filterWidth + 1);
+	const dim3 gridSize(numCols/filterWidth + 1,numRows/filterWidth + 1);
 
+	//TODO: Launch a kernel for separating the RGBA image into different color channels
 	separateChannels<<<gridSize, blockSize>>>(d_inputImageRGBA,
 			numRows,
 			numCols,
@@ -309,7 +308,11 @@ void your_gaussian_blur(const uchar4 * const h_inputImageRGBA, uchar4 * const d_
 			d_green,
 			d_blue);
 
-	//TODO: Launch a kernel for separating the RGBA image into different color channels
+	// Call cudaDeviceSynchronize(), then call checkCudaErrors() immediately after
+	// launching your kernel to make sure that you didn't make any mistakes.
+	cudaDeviceSynchronize();
+	checkCudaErrors(cudaGetLastError());
+
 	gaussian_blur<<<gridSize, blockSize>>>(d_red,
 			d_redBlurred,
 			numRows,numCols,
@@ -323,15 +326,14 @@ void your_gaussian_blur(const uchar4 * const h_inputImageRGBA, uchar4 * const d_
 			numRows,numCols,
 			d_filter, filterWidth);
 
-	// Call cudaDeviceSynchronize(), then call checkCudaErrors() immediately after
-	// launching your kernel to make sure that you didn't make any mistakes.
-	cudaDeviceSynchronize(); checkCudaErrors(cudaGetLastError());
+
 
 	//TODO: Call your convolution kernel here 3 times, once for each color channel.
 
 	// Again, call cudaDeviceSynchronize(), then call checkCudaErrors() immediately after
 	// launching your kernel to make sure that you didn't make any mistakes.
-	cudaDeviceSynchronize(); checkCudaErrors(cudaGetLastError());
+	cudaDeviceSynchronize();
+	checkCudaErrors(cudaGetLastError());
 
 	// Now we recombine your results. We take care of launching this kernel for you.
 	//
